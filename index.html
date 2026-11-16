@@ -175,7 +175,9 @@ function fmtCents(c) {
 var audioCtx = null, analyser = null, micStream = null;
 var bufF = new Float32Array(2048);
 var bufB = new Uint8Array(2048);
+var freqData = new Float32Array(4096);
 var useFloat = true;
+var useSpec = true;
 var recentCents = [];
 var lastStable = null;
 var records = [];
@@ -221,6 +223,33 @@ function readSamples() {
   return bufF;
 }
 
+// スペクトルからA4の基音ピークを直接読む（インハーモニシティの影響を受けない）
+function spectralFreq() {
+  if (!useSpec) return -1;
+  try {
+    analyser.getFloatFrequencyData(freqData);
+  } catch (e) { useSpec = false; return -1; }
+  var binW = audioCtx.sampleRate / analyser.fftSize;
+  var ref = refFreq();
+  var lo = Math.max(1, Math.floor(ref * 0.912 / binW));
+  var hi = Math.min(freqData.length - 2, Math.ceil(ref * 1.093 / binW));
+  var best = -1, bestV = -Infinity;
+  var vals = [];
+  for (var b = lo; b <= hi; b++) {
+    vals.push(freqData[b]);
+    if (freqData[b] > bestV) { bestV = freqData[b]; best = b; }
+  }
+  if (best < 0 || bestV < -80) return -1;
+  vals.sort(function(a, b2){ return a - b2; });
+  var medBand = vals[vals.length >> 1];
+  if (bestV - medBand < 9) return -1;
+  var a = freqData[best - 1], bb = freqData[best], c2 = freqData[best + 1];
+  var denom = a - 2 * bb + c2;
+  var shift = denom !== 0 ? 0.5 * (a - c2) / denom : 0;
+  if (shift > 1) shift = 1; else if (shift < -1) shift = -1;
+  return (best + shift) * binW;
+}
+
 function loop() {
   if (!running) return;
   try {
@@ -231,15 +260,16 @@ function loop() {
       var a = Math.abs(buf[i]); if (a > peak) peak = a;
     }
     rms = Math.sqrt(rms / buf.length);
-    $("levelBar").style.width = Math.min(100, rms * 220) + "%";
+    $("levelBar").style.width = Math.min(100, rms * 160) + "%";
     frameCount++;
     if (frameCount % 30 === 0) {
-      setDiag("状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz / レベル最大 " + peak.toFixed(3) + (useFloat ? "" : " / byte読取") + (window.__trackInfo ? " / " + window.__trackInfo : ""));
+      setDiag("状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz / レベル最大 " + peak.toFixed(3) + " / RMS " + rms.toFixed(4) + (useFloat ? "" : " / byte読取") + (window.__trackInfo ? " / " + window.__trackInfo : ""));
     }
     if (audioCtx.state !== "running") {
       $("status").innerHTML = "<span class='warn'>音声が停止しています。画面のどこかをタップしてください。</span>";
-    } else if (rms > 0.008) {
-      var f = yinPitch(buf, audioCtx.sampleRate);
+    } else if (rms > 0.0012) {
+      var f = spectralFreq();
+      if (f < 0) f = yinPitch(buf, audioCtx.sampleRate);
       if (f > 0) {
         var c = centsFrom(f, refFreq()) + calOffset;
         if (c > -150 && c < 150) {
@@ -301,11 +331,16 @@ $("btnMic").addEventListener("click", function() {
       audioCtx = new AC();
       if (audioCtx.state !== "running") audioCtx.resume();
       var src = audioCtx.createMediaStreamSource(stream);
+      // 音声処理OFFだと生レベルが小さいため、解析用に増幅してからアナライザへ
+      var boost = audioCtx.createGain();
+      boost.gain.value = 4;
       analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
+      analyser.fftSize = 8192;
+      analyser.smoothingTimeConstant = 0.35;
       var mute = audioCtx.createGain();
       mute.gain.value = 0;
-      src.connect(analyser);
+      src.connect(boost);
+      boost.connect(analyser);
       analyser.connect(mute);
       mute.connect(audioCtx.destination);
       running = true;
