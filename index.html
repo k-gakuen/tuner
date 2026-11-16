@@ -228,7 +228,7 @@ function loop() {
     $("levelBar").style.width = Math.min(100, rms * 220) + "%";
     frameCount++;
     if (frameCount % 30 === 0) {
-      setDiag("状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz / レベル最大 " + peak.toFixed(3) + (useFloat ? "" : " / byte読取"));
+      setDiag("状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz / レベル最大 " + peak.toFixed(3) + (useFloat ? "" : " / byte読取") + (window.__trackInfo ? " / " + window.__trackInfo : ""));
     }
     if (audioCtx.state !== "running") {
       $("status").innerHTML = "<span class='warn'>音声が停止しています。画面のどこかをタップしてください。</span>";
@@ -270,14 +270,28 @@ $("btnMic").addEventListener("click", function() {
     $("status").innerHTML = "<span class='warn'>この開き方ではマイクが使えません。マイクはHTTPS（またはlocalhost）で開いたページでのみ動作します。公開URLから開いてください。</span>";
     return;
   }
-  // Safari対策：AudioContextはタップの同期処理の中で作って即resumeする
-  var AC = window.AudioContext || window.webkitAudioContext;
-  audioCtx = new AC();
-  audioCtx.resume();
-  setDiag("状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz（マイク許可待ち）");
-  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+  // Safari対策（第4版）：AudioContextはマイクのストリーム取得後に作る。
+  // 取得前に作ると、WebKitでソースが無音になる既知の不具合がある。
+  // 制約も最小（audio:true）にして変数を減らす。
+  setDiag("マイク許可待ち…");
+  navigator.mediaDevices.getUserMedia({ audio: true })
     .then(function(stream) {
       micStream = stream;
+      var tr = stream.getAudioTracks()[0];
+      var trInfo = tr ? ("トラック：" + (tr.label || "不明") + " / muted=" + tr.muted + " / " + tr.readyState) : "トラックなし";
+      try {
+        var st = tr && tr.getSettings ? tr.getSettings() : {};
+        if (st.sampleRate) trInfo += " / " + st.sampleRate + "Hz";
+      } catch (e) {}
+      // トラック活性化（WebKitの無音化対策）：ミュートしたaudio要素にも流す
+      try {
+        var act = document.createElement("audio");
+        act.muted = true;
+        act.srcObject = stream;
+        act.play().catch(function(){});
+      } catch (e) {}
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
       if (audioCtx.state !== "running") audioCtx.resume();
       var src = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
@@ -290,8 +304,9 @@ $("btnMic").addEventListener("click", function() {
       running = true;
       $("btnMic").disabled = true;
       $("btnMic").textContent = "マイク動作中";
-      setDiag("接続OK：状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz");
-      $("status").textContent = "A4を1音だけ弾いてください";
+      setDiag("接続OK：状態 " + audioCtx.state + " / " + audioCtx.sampleRate + " Hz / " + trInfo);
+      window.__trackInfo = trInfo;
+      $("status").textContent = audioCtx.state === "running" ? "A4を1音だけ弾いてください" : "画面のどこかをタップしてください（音声を開始します）";
       loop();
     })
     .catch(function(e) {
