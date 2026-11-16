@@ -47,6 +47,11 @@
     </select>
     <button id="btnMic">マイクを開始</button>
   </div>
+  <div class="row">
+    <span style="font-size:13px">校正（既知の音源で合わせる）</span>
+    <input type="number" id="calOffset" value="0" min="-40" max="40" step="1" style="width:76px">
+    <span style="font-size:13px">セント</span>
+  </div>
   <div class="bigcents" id="bigCents">-- <small>cents</small></div>
   <div class="freq" id="freqLabel">周波数 -- Hz</div>
   <div class="gauge"><div class="needle" id="needle"></div></div>
@@ -176,6 +181,7 @@ var lastStable = null;
 var records = [];
 var running = false;
 var frameCount = 0;
+var calOffset = 0;
 
 var $ = function(id){ return document.getElementById(id); };
 function refFreq() { return parseFloat($("refPitch").value); }
@@ -235,7 +241,7 @@ function loop() {
     } else if (rms > 0.008) {
       var f = yinPitch(buf, audioCtx.sampleRate);
       if (f > 0) {
-        var c = centsFrom(f, refFreq());
+        var c = centsFrom(f, refFreq()) + calOffset;
         if (c > -150 && c < 150) {
           recentCents.push(c);
           if (recentCents.length > 18) recentCents.shift();
@@ -272,9 +278,10 @@ $("btnMic").addEventListener("click", function() {
   }
   // Safari対策（第4版）：AudioContextはマイクのストリーム取得後に作る。
   // 取得前に作ると、WebKitでソースが無音になる既知の不具合がある。
-  // 制約も最小（audio:true）にして変数を減らす。
+  // 第5版：無音の原因は順序だったとみて、音声処理OFFの制約に戻す。
+  // （audio:trueだとiOSの音声処理（ノイズ抑制等）が部分音を変形させ、ピッチ推定がずれる）
   setDiag("マイク許可待ち…");
-  navigator.mediaDevices.getUserMedia({ audio: true })
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
     .then(function(stream) {
       micStream = stream;
       var tr = stream.getAudioTracks()[0];
@@ -314,6 +321,12 @@ $("btnMic").addEventListener("click", function() {
     });
 });
 
+$("calOffset").addEventListener("change", function() {
+  var v = parseFloat($("calOffset").value);
+  calOffset = isNaN(v) ? 0 : Math.max(-40, Math.min(40, v));
+  recentCents = [];
+  lastStable = null;
+});
 $("btnRecord").addEventListener("click", function() {
   if (lastStable === null) return;
   records.push(Math.round(lastStable));
