@@ -49,6 +49,11 @@
   <div class="freq" id="freqLabel">周波数 -- Hz</div>
   <div class="gauge"><div class="needle" id="needle"></div></div>
   <div class="gauge-labels"><span>-50</span><span>-25</span><span>0</span><span>+25</span><span>+50</span></div>
+  <div style="margin-top:10px">
+    <div style="font-size:11px;color:#9fb0c3;margin-bottom:3px">入力レベル（音が届いているか）</div>
+    <div style="height:10px;background:#0d1117;border:1px solid #2b3644;border-radius:5px;overflow:hidden"><div id="levelBar" style="height:100%;width:0%;background:#4da3ff"></div></div>
+    <div class="note" id="diag"></div>
+  </div>
   <div class="status" id="status">マイクを開始して、A4を1音だけ弾いてください</div>
   <div class="row" style="justify-content:center; margin-top:10px">
     <button id="btnRecord" class="sub2" disabled>この測定を記録する</button>
@@ -202,7 +207,8 @@ function loop() {
   var rms = 0;
   for (var i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / buf.length);
-  if (rms > 0.02) {
+  $("levelBar").style.width = Math.min(100, rms * 220) + "%";
+  if (rms > 0.008) {
     var f = yinPitch(buf, audioCtx.sampleRate);
     if (f > 0) {
       var c = centsFrom(f, refFreq());
@@ -228,23 +234,34 @@ function loop() {
 
 $("btnMic").addEventListener("click", function() {
   if (running) return;
-  var AC = window.AudioContext || window.webkitAudioContext;
-  audioCtx = new AC();
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $("status").innerHTML = "<span class='warn'>この開き方ではマイクが使えません。マイクはHTTPS（またはlocalhost）で開いたページでのみ動作します。ファイルのプレビューや file:// ではブラウザがマイクを遮断します。公開URLから開いてください。</span>";
+    return;
+  }
   navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
     .then(function(stream) {
       micStream = stream;
+      // iOS対策：マイク許可の後にAudioContextを作り、無音ゲイン経由でdestinationまで接続してグラフを駆動する
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+      if (audioCtx.state === "suspended") audioCtx.resume();
       var src = audioCtx.createMediaStreamSource(stream);
       analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
+      var mute = audioCtx.createGain();
+      mute.gain.value = 0;
       src.connect(analyser);
+      analyser.connect(mute);
+      mute.connect(audioCtx.destination);
       running = true;
       $("btnMic").disabled = true;
       $("btnMic").textContent = "マイク動作中";
+      $("diag").textContent = "接続OK：サンプルレート " + audioCtx.sampleRate + " Hz / 状態 " + audioCtx.state;
       $("status").textContent = "A4を1音だけ弾いてください";
       loop();
     })
     .catch(function(e) {
-      $("status").innerHTML = "<span class='warn'>マイクを使えませんでした。ブラウザの許可設定を確認してください。</span>";
+      $("status").innerHTML = "<span class='warn'>マイクを使えませんでした（" + (e && e.name ? e.name : "不明なエラー") + "）。ブラウザのマイク許可を確認してください。HTTPSで開いている必要があります。</span>";
     });
 });
 
