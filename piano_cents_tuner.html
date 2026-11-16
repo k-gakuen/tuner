@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>みんなのピアノ、今何セント？｜A4測定チューナー</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Hiragino Sans", sans-serif; background: #101418; color: #e8ecf1; padding: 16px; max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 19px; margin-bottom: 4px; }
+  .sub { font-size: 12.5px; color: #9fb0c3; margin-bottom: 14px; line-height: 1.6; }
+  .card { background: #1a2129; border: 1px solid #2b3644; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+  .card h2 { font-size: 14px; margin-bottom: 8px; color: #cfe0f4; }
+  button { background: #2f6fed; color: #fff; border: none; border-radius: 9px; padding: 11px 16px; font-size: 15px; cursor: pointer; }
+  button.sub2 { background: #33465e; }
+  button:disabled { opacity: .45; }
+  select, input { background: #0d1117; color: #e8ecf1; border: 1px solid #2b3644; border-radius: 7px; padding: 8px; font-size: 14px; }
+  .bigcents { font-size: 56px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .bigcents small { font-size: 20px; font-weight: 400; }
+  .freq { text-align: center; color: #9fb0c3; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .gauge { position: relative; height: 34px; background: linear-gradient(90deg,#3a2b2b,#2b3644 30%,#274435 46%,#274435 54%,#2b3644 70%,#3a2b2b); border-radius: 7px; margin: 10px 0 4px; overflow: hidden; }
+  .needle { position: absolute; top: 0; bottom: 0; width: 3px; background: #ffd34d; left: 50%; transform: translateX(-50%); transition: left .08s linear; box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  .gauge-labels { display: flex; justify-content: space-between; font-size: 11px; color: #9fb0c3; }
+  .status { font-size: 13px; color: #ffd34d; min-height: 18px; text-align: center; margin-top: 6px; }
+  .reads { font-size: 14px; line-height: 1.9; font-variant-numeric: tabular-nums; }
+  .median { font-size: 17px; font-weight: 700; color: #8be28b; }
+  textarea { width: 100%; background: #0d1117; color: #e8ecf1; border: 1px solid #2b3644; border-radius: 7px; padding: 9px; font-size: 14px; min-height: 58px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+  .note { font-size: 12px; color: #9fb0c3; line-height: 1.7; }
+  .warn { color: #ffb3b3; }
+</style>
+</head>
+<body>
+<h1>みんなのピアノ、今何セント？</h1>
+<p class="sub">真ん中のラ（A4）を弾くと、基準ピッチからのずれをセントで表示します。3回測って真ん中の値が、あなたのピアノの報告値です。</p>
+
+<div class="card">
+  <h2>1. 測定</h2>
+  <div class="row">
+    <span style="font-size:13px">基準ピッチ</span>
+    <select id="refPitch">
+      <option value="440" selected>A = 440 Hz</option>
+      <option value="441">A = 441 Hz</option>
+      <option value="442">A = 442 Hz</option>
+    </select>
+    <button id="btnMic">マイクを開始</button>
+  </div>
+  <div class="bigcents" id="bigCents">-- <small>cents</small></div>
+  <div class="freq" id="freqLabel">周波数 -- Hz</div>
+  <div class="gauge"><div class="needle" id="needle"></div></div>
+  <div class="gauge-labels"><span>-50</span><span>-25</span><span>0</span><span>+25</span><span>+50</span></div>
+  <div class="status" id="status">マイクを開始して、A4を1音だけ弾いてください</div>
+  <div class="row" style="justify-content:center; margin-top:10px">
+    <button id="btnRecord" class="sub2" disabled>この測定を記録する</button>
+    <button id="btnClear" class="sub2" disabled>記録を消す</button>
+  </div>
+  <div class="reads" id="reads"></div>
+</div>
+
+<div class="card">
+  <h2>2. 報告文を作る</h2>
+  <div class="row">
+    <select id="pianoType">
+      <option value="">種類（任意）</option>
+      <option value="グランド">グランド</option>
+      <option value="アップライト">アップライト</option>
+    </select>
+    <select id="years">
+      <option value="">前回の調律（任意）</option>
+      <option value="調律は半年以内">半年以内</option>
+      <option value="調律は1年前">1年前</option>
+      <option value="調律は2年前">2年前</option>
+      <option value="調律は3年前">3年前</option>
+      <option value="調律は5年以上前">5年以上前</option>
+      <option value="調律は10年以上前">10年以上前</option>
+      <option value="調律の時期は不明">時期は不明</option>
+    </select>
+  </div>
+  <textarea id="reportText" readonly placeholder="測定を記録すると、ここに報告文ができます"></textarea>
+  <div class="row"><button id="btnCopy" disabled>報告文をコピー</button></div>
+  <p class="note">コピーした文を、そのままInstagramの投稿コメントに貼ってください。</p>
+</div>
+
+<div class="card">
+  <h2>テスト音（動作確認用）</h2>
+  <div class="row">
+    <span style="font-size:13px">ずれ</span>
+    <select id="testCents">
+      <option value="-35">-35 セント</option>
+      <option value="-23">-23 セント</option>
+      <option value="-10">-10 セント</option>
+      <option value="0">0 セント</option>
+      <option value="8" selected>+8 セント</option>
+      <option value="20">+20 セント</option>
+    </select>
+    <button id="btnTest" class="sub2">テスト音を鳴らす</button>
+  </div>
+  <p class="note">別の端末で鳴らして、この画面のマイクに聞かせると検出を試せます。</p>
+</div>
+
+<p class="note">注意：スマホのマイクとアプリの特性上、数セントの誤差が出ることがあります。精密測定ではなく実態調査用の目安です。音が小さい・部屋が騒がしいと検出できません。A4から大きく外れている場合は表示が不安定になります。</p>
+
+<script>
+"use strict";
+// ===== YIN pitch detection =====
+function yinPitch(buf, sampleRate, threshold) {
+  threshold = threshold || 0.12;
+  var N = buf.length, half = N >> 1;
+  var d = new Float32Array(half);
+  // difference function
+  for (var tau = 1; tau < half; tau++) {
+    var sum = 0;
+    for (var i = 0; i < half; i++) {
+      var diff = buf[i] - buf[i + tau];
+      sum += diff * diff;
+    }
+    d[tau] = sum;
+  }
+  // cumulative mean normalized difference
+  var cmnd = new Float32Array(half);
+  cmnd[0] = 1;
+  var running = 0;
+  for (tau = 1; tau < half; tau++) {
+    running += d[tau];
+    cmnd[tau] = running > 0 ? d[tau] * tau / running : 1;
+  }
+  // absolute threshold search
+  var tauEst = -1;
+  var tauMin = Math.floor(sampleRate / 600);   // up to 600 Hz
+  var tauMax = Math.min(half - 2, Math.ceil(sampleRate / 250)); // down to 250 Hz
+  for (tau = tauMin; tau <= tauMax; tau++) {
+    if (cmnd[tau] < threshold) {
+      while (tau + 1 <= tauMax && cmnd[tau + 1] < cmnd[tau]) tau++;
+      tauEst = tau;
+      break;
+    }
+  }
+  if (tauEst < 0) {
+    // fall back to global minimum in range
+    var minV = Infinity;
+    for (tau = tauMin; tau <= tauMax; tau++) {
+      if (cmnd[tau] < minV) { minV = cmnd[tau]; tauEst = tau; }
+    }
+    if (minV > 0.35) return -1; // not confident
+  }
+  // parabolic interpolation
+  var x0 = tauEst > 0 ? cmnd[tauEst - 1] : cmnd[tauEst];
+  var x1 = cmnd[tauEst];
+  var x2 = tauEst + 1 < half ? cmnd[tauEst + 1] : cmnd[tauEst];
+  var denom = x0 - 2 * x1 + x2;
+  var shift = denom !== 0 ? 0.5 * (x0 - x2) / denom : 0;
+  return sampleRate / (tauEst + shift);
+}
+
+function centsFrom(freq, ref) { return 1200 * Math.log2(freq / ref); }
+function median(arr) {
+  if (!arr.length) return null;
+  var s = arr.slice().sort(function(a,b){return a-b;});
+  var m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2;
+}
+function fmtCents(c) {
+  var r = Math.round(c);
+  return (r > 0 ? "+" : "") + r;
+}
+
+// ===== App state =====
+var audioCtx = null, analyser = null, micStream = null;
+var buf = new Float32Array(2048);
+var recentCents = [];      // rolling window for stability
+var lastStable = null;     // last stable reading (cents)
+var stableCount = 0;
+var records = [];          // recorded readings (cents, rounded median per strike not needed; store value)
+var running = false;
+
+var $ = function(id){ return document.getElementById(id); };
+
+function refFreq() { return parseFloat($("refPitch").value); }
+
+function updateReport() {
+  if (!records.length) { $("reportText").value = ""; $("btnCopy").disabled = true; return; }
+  var med = Math.round(median(records));
+  var parts = [fmtCents(med) + "セント"];
+  if ($("pianoType").value) parts.push($("pianoType").value);
+  if ($("years").value) parts.push($("years").value);
+  $("reportText").value = parts.join("、");
+  $("btnCopy").disabled = false;
+}
+function renderRecords() {
+  if (!records.length) { $("reads").innerHTML = ""; $("btnRecord").disabled = !running; $("btnClear").disabled = true; return; }
+  var html = records.map(function(v, i){ return (i+1) + "回目：" + fmtCents(v) + " セント"; }).join("<br>");
+  html += "<br><span class='median'>報告値（真ん中の値）：" + fmtCents(Math.round(median(records))) + " セント</span>";
+  $("reads").innerHTML = html;
+  $("btnClear").disabled = false;
+  updateReport();
+}
+
+function loop() {
+  if (!running) return;
+  analyser.getFloatTimeDomainData(buf);
+  // level check
+  var rms = 0;
+  for (var i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / buf.length);
+  if (rms > 0.02) {
+    var f = yinPitch(buf, audioCtx.sampleRate);
+    if (f > 0) {
+      var c = centsFrom(f, refFreq());
+      if (c > -150 && c < 150) {
+        recentCents.push(c);
+        if (recentCents.length > 18) recentCents.shift();
+        var med = median(recentCents);
+        lastStable = med; stableCount++;
+        $("bigCents").innerHTML = fmtCents(med) + " <small>cents</small>";
+        $("freqLabel").textContent = "周波数 " + f.toFixed(1) + " Hz";
+        var pct = 50 + Math.max(-50, Math.min(50, med));
+        $("needle").style.left = pct + "%";
+        $("status").textContent = "検出中… 音が落ち着いたら「記録する」を押してください";
+        $("btnRecord").disabled = false;
+      }
+    }
+  } else {
+    if (recentCents.length) { recentCents = []; }
+    $("status").textContent = lastStable !== null ? "音が消えました。次の測定はA4を弾いてください" : "A4を1音だけ弾いてください";
+  }
+  requestAnimationFrame(loop);
+}
+
+$("btnMic").addEventListener("click", function() {
+  if (running) return;
+  var AC = window.AudioContext || window.webkitAudioContext;
+  audioCtx = new AC();
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+    .then(function(stream) {
+      micStream = stream;
+      var src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      src.connect(analyser);
+      running = true;
+      $("btnMic").disabled = true;
+      $("btnMic").textContent = "マイク動作中";
+      $("status").textContent = "A4を1音だけ弾いてください";
+      loop();
+    })
+    .catch(function(e) {
+      $("status").innerHTML = "<span class='warn'>マイクを使えませんでした。ブラウザの許可設定を確認してください。</span>";
+    });
+});
+
+$("btnRecord").addEventListener("click", function() {
+  if (lastStable === null) return;
+  records.push(Math.round(lastStable));
+  if (records.length > 5) records.shift();
+  lastStable = null;
+  renderRecords();
+  $("status").textContent = records.length >= 3 ? "3回そろいました。報告文ができています" : "記録しました。あと" + (3 - records.length) + "回測ってください";
+});
+$("btnClear").addEventListener("click", function() { records = []; renderRecords(); });
+$("pianoType").addEventListener("change", updateReport);
+$("years").addEventListener("change", updateReport);
+$("btnCopy").addEventListener("click", function() {
+  $("reportText").select();
+  if (navigator.clipboard) navigator.clipboard.writeText($("reportText").value);
+  else document.execCommand("copy");
+  $("btnCopy").textContent = "コピーしました";
+  setTimeout(function(){ $("btnCopy").textContent = "報告文をコピー"; }, 1600);
+});
+
+// ===== Test tone: synthetic piano-ish A4 with harmonics + decay =====
+$("btnTest").addEventListener("click", function() {
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if (!audioCtx) audioCtx = new AC();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var cents = parseFloat($("testCents").value);
+  var f0 = 440 * Math.pow(2, cents / 1200);
+  var t = audioCtx.currentTime;
+  var master = audioCtx.createGain();
+  master.gain.setValueAtTime(0.0001, t);
+  master.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
+  master.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+  master.connect(audioCtx.destination);
+  var amps = [1, 0.62, 0.38, 0.22, 0.13, 0.08];
+  for (var n = 1; n <= 6; n++) {
+    var o = audioCtx.createOscillator();
+    o.type = "sine";
+    // slight inharmonicity like a real string
+    o.frequency.value = f0 * n * Math.sqrt(1 + 0.0002 * n * n);
+    var g = audioCtx.createGain();
+    g.gain.value = amps[n - 1];
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 2.9);
+  }
+});
+</script>
+</body>
+</html>
